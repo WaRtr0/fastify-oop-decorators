@@ -1,5 +1,5 @@
 export * from './boostrap.js';
-export * from './controller/controller.js';
+export * from './controller/controller.decorator.js';
 export * from './guards/guards.interfaces.js';
 export * from './guards/useGuards.decorator.js';
 export * from './http/exceptions.js';
