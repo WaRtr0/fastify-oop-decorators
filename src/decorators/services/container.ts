@@ -68,6 +68,10 @@ class DIContainer {
 		this.register(token, newInstance);
 		return newInstance;
 	}
+
+	public getAllInstances(): any[] {
+		return Array.from(this.services.values());
+	}
 }
 
 export const container = new DIContainer();

@@ -6,3 +6,11 @@ export interface ModuleMetadata {
 	providers?: Type[];
 	gateways?: Type[];
 }
+
+export interface OnModuleInit {
+	onModuleInit(): void | Promise<void>;
+}
+
+export interface OnModuleDestroy {
+	onModuleDestroy(): void | Promise<void>;
+}

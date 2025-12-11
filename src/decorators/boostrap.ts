@@ -78,7 +78,7 @@ async function runMiddlewares(
 	}
 }
 
-export function bootstrap(app: FastifyInstance, rootModule: Type) {
+export async function bootstrap(app: FastifyInstance, rootModule: Type) {
 	container.setApp(app); // on set une instance de fastify dans le container pour les injections de plugins
 	const { providers, controllers, gateways } = processModule(rootModule);
 
@@ -267,4 +267,19 @@ export function bootstrap(app: FastifyInstance, rootModule: Type) {
 			app.log.info(`WebSocket Gateway initialized for namespace: ${namespace}`);
 		});
 	}
+
+	for (const instance of container.getAllInstances()) {
+		if (typeof instance.onModuleInit === 'function') {
+			await instance.onModuleInit();
+			// app.log.debug(`[Lifecycle] ${instance.constructor.name} initialized.`);
+		}
+	}
+
+	app.addHook('onClose', async (_instance: FastifyInstance) => {
+		for (const service of container.getAllInstances()) {
+			if (typeof service.onModuleDestroy === 'function') {
+				await service.onModuleDestroy();
+			}
+		}
+	});
 }
