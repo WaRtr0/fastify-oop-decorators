@@ -79,10 +79,10 @@ async function runMiddlewares(
 }
 
 export function bootstrap(app: FastifyInstance, rootModule: Type) {
+	container.setApp(app); // on set une instance de fastify dans le container pour les injections de plugins
 	const { providers, controllers, gateways } = processModule(rootModule);
 
 	providers.forEach((provider) => container.resolve(provider));
-
 	controllers.forEach((controller) => {
 		const controllerInstance = container.resolve(controller);
 		const prefix = Reflect.getMetadata(METADATA_KEYS.controller, controller) || '';

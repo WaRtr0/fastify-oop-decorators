@@ -1,3 +1,4 @@
+import type { FastifyInstance } from 'fastify';
 import 'reflect-metadata';
 import { METADATA_KEYS } from '../helpers/metadata.keys.js';
 
@@ -5,6 +6,11 @@ type Constructor<T> = new (...args: any[]) => T;
 
 class DIContainer {
 	private services: Map<any, any> = new Map();
+	private app: FastifyInstance | null = null;
+
+	public setApp(app: FastifyInstance) {
+		this.app = app;
+	}
 
 	public register<T>(token: any, instance: T): void {
 		if (!this.services.has(token)) {
@@ -40,6 +46,23 @@ class DIContainer {
 			Reflect.getMetadata(METADATA_KEYS.injectProps, token) || {};
 		for (const [propKey, depToken] of Object.entries(injectPropsMap)) {
 			(newInstance as any)[propKey] = this.resolve(depToken);
+		}
+
+		// Apply plugin injections
+		const injectPluginsMap = Reflect.getMetadata(METADATA_KEYS.injectPlugin, token) || {};
+		for (const [propKey, pluginName] of Object.entries(injectPluginsMap)) {
+			if (!this.app) {
+				throw new Error("Fastify instance not set in Container. Did you forget to update bootstrap?");
+			}
+			// On va chercher directement app['db'] ou app['io']
+			// On utilise 'as any' car TypeScript ne peut pas savoir dynamiquement que 'db' existe
+			const pluginValue = (this.app as any)[pluginName as string];
+			
+			if (pluginValue === undefined) {
+				console.warn(`[DI] Warning: Plugin '${pluginName}' not found on Fastify instance.`);
+			}
+			
+			(newInstance as any)[propKey] = pluginValue;
 		}
 
 		this.register(token, newInstance);

@@ -11,6 +11,7 @@ export * from './params/params.decorators.js';
 export * from './route-options/http.decorator.js';
 export * from './routes.js';
 export * from './services/inject.decorator.js';
+export * from './services/inject-plugin.decorator.js';
 export * from './services/service.decorator.js';
 export * from './validation/schema.decorator.js';
 

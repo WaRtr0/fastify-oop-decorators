@@ -13,6 +13,7 @@ export const METADATA_KEYS = {
 	headers: Symbol('headers'),
 	httpCode: Symbol('httpCode'),
 	redirect: Symbol('redirect'),
+	injectPlugin: Symbol('injectPlugin'),
 
 	// WebSocket Metadata
 	webSocketGateway: Symbol('webSocketGateway'),
