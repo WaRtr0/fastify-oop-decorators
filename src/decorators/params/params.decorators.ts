@@ -8,3 +8,4 @@ export const Query = createParamDecorator(ParamType.QUERY);
 export const Param = createParamDecorator(ParamType.PARAM);
 export const Headers = createParamDecorator(ParamType.HEADERS);
 export const Plugin = createParamDecorator(ParamType.PLUGIN);
+export const JWTBody = createParamDecorator(ParamType.JWT_BODY);

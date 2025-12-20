@@ -78,6 +78,28 @@ async function runMiddlewares(
     }
 }
 
+// Oui attention il n'est pas secure, il ne verifie pas la signature mais c justement rechercher
+// car evite d'utiliser du cpu pour rien, car on aura le check qui passe par dessu (le guard)
+function parseJWT(token: string | undefined | null | string[]): any {
+    if (!token) return undefined;
+    if (Array.isArray(token)) token = token[0];
+
+    try {
+        if (token.startsWith('Bearer ')) {
+            token = token.slice(7);
+        }
+        const parts = token.split('.');
+        if (parts.length >= 2) {
+            const payloadBase64 = parts[1];
+            const decoded = Buffer.from(payloadBase64, 'base64').toString('utf-8');
+            return JSON.parse(decoded);
+        }
+    } catch (e) {
+        // ignore error
+    }
+    return undefined;
+}
+
 function resolveWebSocketArgs(
     params: ParamDefinition[],
     socket: Socket,
@@ -93,33 +115,13 @@ function resolveWebSocketArgs(
                 args.push(payload);
                 break;
             case ParamType.JWT_BODY:
-                try {
-                    let token =
+                args.push(
+                    parseJWT(
                         socket.handshake.auth?.token ||
-                        socket.handshake.query?.token ||
-                        socket.handshake.headers['authorization'];
-
-                    if (Array.isArray(token)) token = token[0];
-
-                    if (token) {
-                        if (token.startsWith('Bearer ')) {
-                            token = token.slice(7);
-                        }
-
-                        const parts = token.split('.');
-                        if (parts.length >= 2) {
-                            const payloadBase64 = parts[1];
-                            const decoded = Buffer.from(payloadBase64, 'base64').toString('utf-8');
-                            args.push(JSON.parse(decoded));
-                        } else {
-                            args.push(undefined);
-                        }
-                    } else {
-                        args.push(undefined);
-                    }
-                } catch (e) {
-                    args.push(undefined);
-                }
+                            socket.handshake.query?.token ||
+                            socket.handshake.headers['authorization'],
+                    ),
+                );
                 break;
             default:
                 args.push(undefined);
@@ -204,6 +206,7 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
                                     case ParamType.PARAM: args.push(param.key ? (req.params as any)[param.key] : req.params); break;
                                     case ParamType.HEADERS: args.push(param.key ? req.headers[param.key] : req.headers); break;
                                     case ParamType.PLUGIN: args.push(param.key ? (req.server as any)[param.key] : req.server); break;
+                                    case ParamType.JWT_BODY: args.push(parseJWT(req.headers['authorization'])); break;
                                     default: args.push(undefined);
                                 }
                             }
