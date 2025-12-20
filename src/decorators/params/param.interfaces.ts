@@ -6,6 +6,9 @@ export enum ParamType {
 	PARAM,
 	HEADERS,
 	PLUGIN,
+	JWT_BODY,
+	SOCKET,
+	MESSAGE_BODY,
 }
 
 export interface ParamDefinition {

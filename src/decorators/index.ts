@@ -21,3 +21,4 @@ export * from './websocket/socket-schema.decorator.js';
 export * from './websocket/subscribe-connection.decorator.js';
 export * from './websocket/subscribe-disconnection.decorator.js';
 export * from './websocket/subscribe-message.decorator.js';
+export * from './websocket/websocket.params.js';

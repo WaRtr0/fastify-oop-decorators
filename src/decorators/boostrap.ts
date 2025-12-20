@@ -78,6 +78,56 @@ async function runMiddlewares(
     }
 }
 
+function resolveWebSocketArgs(
+    params: ParamDefinition[],
+    socket: Socket,
+    payload?: any,
+): any[] {
+    const args: any[] = [];
+    for (const param of params) {
+        switch (param.type) {
+            case ParamType.SOCKET:
+                args.push(socket);
+                break;
+            case ParamType.MESSAGE_BODY:
+                args.push(payload);
+                break;
+            case ParamType.JWT_BODY:
+                try {
+                    let token =
+                        socket.handshake.auth?.token ||
+                        socket.handshake.query?.token ||
+                        socket.handshake.headers['authorization'];
+
+                    if (Array.isArray(token)) token = token[0];
+
+                    if (token) {
+                        if (token.startsWith('Bearer ')) {
+                            token = token.slice(7);
+                        }
+
+                        const parts = token.split('.');
+                        if (parts.length >= 2) {
+                            const payloadBase64 = parts[1];
+                            const decoded = Buffer.from(payloadBase64, 'base64').toString('utf-8');
+                            args.push(JSON.parse(decoded));
+                        } else {
+                            args.push(undefined);
+                        }
+                    } else {
+                        args.push(undefined);
+                    }
+                } catch (e) {
+                    args.push(undefined);
+                }
+                break;
+            default:
+                args.push(undefined);
+        }
+    }
+    return args;
+}
+
 export async function bootstrap(app: FastifyInstance, rootModule: Type) {
     container.setApp(app);
     const { providers, controllers, gateways } = processModule(rootModule);
@@ -222,8 +272,18 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
             );
 
             app.io.of(namespace).on('connection', (socket: Socket) => {
+                const connectionParams: ParamDefinition[] = connectionHandlerMethod
+                    ? Reflect.getOwnMetadata(METADATA_KEYS.param, gateway.prototype, connectionHandlerMethod) || []
+                    : [];
+                const sortedConnectionParams = connectionParams.sort((a, b) => a.index - b.index);
+
                 if (connectionHandlerMethod) {
-                    gatewayInstance[connectionHandlerMethod](socket);
+                    if (sortedConnectionParams.length > 0) {
+                        const args = resolveWebSocketArgs(sortedConnectionParams, socket);
+                        gatewayInstance[connectionHandlerMethod](...args);
+                    } else {
+                        gatewayInstance[connectionHandlerMethod](socket);
+                    }
                 }
 
                 messages.forEach(({ event, methodName }) => {
@@ -231,6 +291,12 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
                     const schemaMeta: any =
                         Reflect.getOwnMetadata(METADATA_KEYS.schema, gateway.prototype, methodName) ??
                         undefined;
+                    const methodParams: ParamDefinition[] = Reflect.getOwnMetadata(
+                        METADATA_KEYS.param,
+                        gateway.prototype,
+                        methodName,
+                    ) || [];
+                    const sortedMethodParams = methodParams.sort((a, b) => a.index - b.index);
 
                     socket.on(event, async (payload: any) => {
                         try {
@@ -250,7 +316,12 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
                                 }
                             }
 
-                            const result = await Promise.resolve(handler(socket, payload));
+                            let args: any[] = [socket, payload];
+                            if (sortedMethodParams.length > 0) {
+                                args = resolveWebSocketArgs(sortedMethodParams, socket, payload);
+                            }
+
+                            const result = await Promise.resolve(handler(...args));
                             if (result !== undefined) {
                                 socket.emit(event, result);
                             }
@@ -265,8 +336,18 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
                 });
 
                 socket.on('disconnect', () => {
+                    const disconnectionParams: ParamDefinition[] = disconnectionHandlerMethod
+                        ? Reflect.getOwnMetadata(METADATA_KEYS.param, gateway.prototype, disconnectionHandlerMethod) || []
+                        : [];
+                    const sortedDisconnectionParams = disconnectionParams.sort((a, b) => a.index - b.index);
+
                     if (disconnectionHandlerMethod) {
-                        gatewayInstance[disconnectionHandlerMethod](socket);
+                         if (sortedDisconnectionParams.length > 0) {
+                            const args = resolveWebSocketArgs(sortedDisconnectionParams, socket);
+                            gatewayInstance[disconnectionHandlerMethod](...args);
+                        } else {
+                            gatewayInstance[disconnectionHandlerMethod](socket);
+                        }
                     }
                 });
             });

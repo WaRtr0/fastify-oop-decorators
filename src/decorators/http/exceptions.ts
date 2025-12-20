@@ -51,3 +51,9 @@ export class InternalServerErrorException extends HttpException {
 		super(message, 500, payload);
 	}
 }
+
+export class BadGatewayException extends HttpException {
+	constructor(message = 'Bad Gateway', payload?: unknown) {
+		super(message, 502, payload);
+	}
+}
