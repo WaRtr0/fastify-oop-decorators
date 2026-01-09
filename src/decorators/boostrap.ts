@@ -290,62 +290,131 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
                 gateway,
             );
 
+            // opti V3 la compilation de l'ajv ete toujours dans la runtime il ne fait pas dans chaque event mais fait toute meme a chaque connection de nouveau utilisateur... maintenant c en cache juste avant...
+            const connectionParams = connectionHandlerMethod 
+                ? (Reflect.getOwnMetadata(METADATA_KEYS.param, gateway.prototype, connectionHandlerMethod) || []).sort((a: any, b: any) => a.index - b.index) 
+                : [];
+
+            const disconnectionParams = disconnectionHandlerMethod
+                ? (Reflect.getOwnMetadata(METADATA_KEYS.param, gateway.prototype, disconnectionHandlerMethod) || []).sort((a: any, b: any) => a.index - b.index)
+                : [];
+
+            const preparedListeners = messages.map(({ event, methodName }) => {
+                const handler = gatewayInstance[methodName].bind(gatewayInstance);
+
+                const schemaMeta: any = Reflect.getOwnMetadata(METADATA_KEYS.schema, gateway.prototype, methodName);
+                const bodySchema = schemaMeta?.body || schemaMeta;
+                let validate: ((data: any) => boolean) | undefined;
+
+                  // grosse opti !
+                if (bodySchema) {
+                    validate = (app.validatorCompiler as any)({ schema: bodySchema });
+                }
+
+                const methodParams = Reflect.getOwnMetadata(METADATA_KEYS.param, gateway.prototype, methodName) || [];
+                const sortedParams = methodParams.sort((a: any, b: any) => a.index - b.index);
+
+                return { event, handler, validate, sortedParams };
+            });
+
             app.io.of(namespace).on('connection', (socket: Socket) => {
                 const connectionParams: ParamDefinition[] = connectionHandlerMethod
                     ? Reflect.getOwnMetadata(METADATA_KEYS.param, gateway.prototype, connectionHandlerMethod) || []
                     : [];
                 const sortedConnectionParams = connectionParams.sort((a, b) => a.index - b.index);
 
+                // if (connectionHandlerMethod) {
+                //     if (sortedConnectionParams.length > 0) {
+                //         const args = resolveWebSocketArgs(sortedConnectionParams, socket);
+                //         gatewayInstance[connectionHandlerMethod](...args);
+                //     } else {
+                //         gatewayInstance[connectionHandlerMethod](socket);
+                //     }
+                // }
+
                 if (connectionHandlerMethod) {
-                    if (sortedConnectionParams.length > 0) {
-                        const args = resolveWebSocketArgs(sortedConnectionParams, socket);
-                        gatewayInstance[connectionHandlerMethod](...args);
-                    } else {
-                        gatewayInstance[connectionHandlerMethod](socket);
-                    }
+                    const args = connectionParams.length > 0
+                        ? resolveWebSocketArgs(connectionParams, socket)
+                        : [socket];
+                    gatewayInstance[connectionHandlerMethod](...args);
                 }
 
-                messages.forEach(({ event, methodName }) => {
-                    const handler = gatewayInstance[methodName].bind(gatewayInstance);
-                    const schemaMeta: any =
-                        Reflect.getOwnMetadata(METADATA_KEYS.schema, gateway.prototype, methodName) ??
-                        undefined;
-                    const methodParams: ParamDefinition[] = Reflect.getOwnMetadata(
-                        METADATA_KEYS.param,
-                        gateway.prototype,
-                        methodName,
-                    ) || [];
-                    const sortedMethodParams = methodParams.sort((a, b) => a.index - b.index);
+                // messages.forEach(({ event, methodName }) => {
+                //     const handler = gatewayInstance[methodName].bind(gatewayInstance);
+                //     const schemaMeta: any =
+                //         Reflect.getOwnMetadata(METADATA_KEYS.schema, gateway.prototype, methodName) ??
+                //         undefined;
+                //     const methodParams: ParamDefinition[] = Reflect.getOwnMetadata(
+                //         METADATA_KEYS.param,
+                //         gateway.prototype,
+                //         methodName,
+                //     ) || [];
+                //     const sortedMethodParams = methodParams.sort((a, b) => a.index - b.index);
 
 
-                    // opti de malade, evite de recompiler ajv a chaque runime (chaque event)
-                    let validate: ((data: any) => boolean) | undefined;
+                //     // opti de malade, evite de recompiler ajv a chaque runime (chaque event)
+                //     let validate: ((data: any) => boolean) | undefined;
 
-                    const bodySchema = schemaMeta && typeof schemaMeta === 'object' && 'body' in schemaMeta ? (schemaMeta as any).body : schemaMeta;
+                //     const bodySchema = schemaMeta && typeof schemaMeta === 'object' && 'body' in schemaMeta ? (schemaMeta as any).body : schemaMeta;
 
-                    if (bodySchema) {
-                        validate = (app.validatorCompiler as any)({ schema: bodySchema });
-                    }
+                //     if (bodySchema) {
+                //         validate = (app.validatorCompiler as any)({ schema: bodySchema });
+                //     }
 
+                //     socket.on(event, async (payload: any) => {
+                //         try {
+                //             // desastre d'opti...
+
+                //             // const bodySchema =
+                //             //     schemaMeta && typeof schemaMeta === 'object' && 'body' in schemaMeta
+                //             //         ? (schemaMeta as any).body
+                //             //         : schemaMeta;
+                //             // if (bodySchema) {
+                //             //     const validate = (app.validatorCompiler as any)({ schema: bodySchema });
+                //             //     if (!validate(payload)) {
+                //             //         socket.emit('error', {
+                //             //             event,
+                //             //             message: 'Validation failed',
+                //             //             errors: validate.errors,
+                //             //         });
+                //             //         return;
+                //             //     }
+                //             // }
+
+                //             if (validate) {
+                //                 const isValid = validate(payload);
+                //                 if (!isValid) {
+                //                     socket.emit('error', {
+                //                         event,
+                //                         message: 'Validation failed',
+                //                         errors: (validate as any).errors,
+                //                     });
+                //                     return;
+                //                 }
+                //             }
+
+                //             let args: any[] = [socket, payload];
+                //             if (sortedMethodParams.length > 0) {
+                //                 args = resolveWebSocketArgs(sortedMethodParams, socket, payload);
+                //             }
+
+                //             const result = await Promise.resolve(handler(...args));
+                //             if (result !== undefined) {
+                //                 socket.emit(event, result);
+                //             }
+                //         } catch (error: any) {
+                //             socket.emit('error', {
+                //                 event,
+                //                 message: 'An error occurred on the server.',
+                //                 error: error.message,
+                //             });
+                //         }
+                //     });
+                // });
+
+                preparedListeners.forEach(({ event, handler, validate, sortedParams }) => {
                     socket.on(event, async (payload: any) => {
                         try {
-                            // desastre d'opti...
-
-                            // const bodySchema =
-                            //     schemaMeta && typeof schemaMeta === 'object' && 'body' in schemaMeta
-                            //         ? (schemaMeta as any).body
-                            //         : schemaMeta;
-                            // if (bodySchema) {
-                            //     const validate = (app.validatorCompiler as any)({ schema: bodySchema });
-                            //     if (!validate(payload)) {
-                            //         socket.emit('error', {
-                            //             event,
-                            //             message: 'Validation failed',
-                            //             errors: validate.errors,
-                            //         });
-                            //         return;
-                            //     }
-                            // }
 
                             if (validate) {
                                 const isValid = validate(payload);
@@ -360,11 +429,12 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
                             }
 
                             let args: any[] = [socket, payload];
-                            if (sortedMethodParams.length > 0) {
-                                args = resolveWebSocketArgs(sortedMethodParams, socket, payload);
+                            if (sortedParams.length > 0) {
+                                args = resolveWebSocketArgs(sortedParams, socket, payload);
                             }
 
                             const result = await Promise.resolve(handler(...args));
+
                             if (result !== undefined) {
                                 socket.emit(event, result);
                             }
@@ -379,18 +449,11 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
                 });
 
                 socket.on('disconnect', () => {
-                    const disconnectionParams: ParamDefinition[] = disconnectionHandlerMethod
-                        ? Reflect.getOwnMetadata(METADATA_KEYS.param, gateway.prototype, disconnectionHandlerMethod) || []
-                        : [];
-                    const sortedDisconnectionParams = disconnectionParams.sort((a, b) => a.index - b.index);
-
                     if (disconnectionHandlerMethod) {
-                         if (sortedDisconnectionParams.length > 0) {
-                            const args = resolveWebSocketArgs(sortedDisconnectionParams, socket);
-                            gatewayInstance[disconnectionHandlerMethod](...args);
-                        } else {
-                            gatewayInstance[disconnectionHandlerMethod](socket);
-                        }
+                        const args = disconnectionParams.length > 0
+                            ? resolveWebSocketArgs(disconnectionParams, socket)
+                            : [socket];
+                        gatewayInstance[disconnectionHandlerMethod](...args);
                     }
                 });
             });
@@ -399,7 +462,7 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
     }
 
     // --- Lifecycle Hooks ---
-    
+
     // OnModuleInit
     for (const instance of container.getAllInstances()) {
         if (typeof instance.onModuleInit === 'function') {
