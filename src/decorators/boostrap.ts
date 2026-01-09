@@ -170,6 +170,7 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
             // Tri des paramètres
             const sortedParams = methodParams.sort((a, b) => a.index - b.index);
 
+            const methodHttpCode = Reflect.getOwnMetadata(METADATA_KEYS.httpCode, controller.prototype, route.methodName);
             // Binding du handler
             const handler = controllerInstance[route.methodName].bind(controllerInstance);
 
@@ -220,6 +221,9 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
                             }
                         }
 
+                        if (methodHttpCode) {
+                            res.status(methodHttpCode);
+                        }
                         // 5. Exécution Handler
                         const result = await handler(...args);
 
