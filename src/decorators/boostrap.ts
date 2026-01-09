@@ -317,19 +317,43 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
                     ) || [];
                     const sortedMethodParams = methodParams.sort((a, b) => a.index - b.index);
 
+
+                    // opti de malade, evite de recompiler ajv a chaque runime (chaque event)
+                    let validate: ((data: any) => boolean) | undefined;
+
+                    const bodySchema = schemaMeta && typeof schemaMeta === 'object' && 'body' in schemaMeta ? (schemaMeta as any).body : schemaMeta;
+
+                    if (bodySchema) {
+                        validate = (app.validatorCompiler as any)({ schema: bodySchema });
+                    }
+
                     socket.on(event, async (payload: any) => {
                         try {
-                            const bodySchema =
-                                schemaMeta && typeof schemaMeta === 'object' && 'body' in schemaMeta
-                                    ? (schemaMeta as any).body
-                                    : schemaMeta;
-                            if (bodySchema) {
-                                const validate = (app.validatorCompiler as any)({ schema: bodySchema });
-                                if (!validate(payload)) {
+                            // desastre d'opti...
+
+                            // const bodySchema =
+                            //     schemaMeta && typeof schemaMeta === 'object' && 'body' in schemaMeta
+                            //         ? (schemaMeta as any).body
+                            //         : schemaMeta;
+                            // if (bodySchema) {
+                            //     const validate = (app.validatorCompiler as any)({ schema: bodySchema });
+                            //     if (!validate(payload)) {
+                            //         socket.emit('error', {
+                            //             event,
+                            //             message: 'Validation failed',
+                            //             errors: validate.errors,
+                            //         });
+                            //         return;
+                            //     }
+                            // }
+
+                            if (validate) {
+                                const isValid = validate(payload);
+                                if (!isValid) {
                                     socket.emit('error', {
                                         event,
                                         message: 'Validation failed',
-                                        errors: validate.errors,
+                                        errors: (validate as any).errors,
                                     });
                                     return;
                                 }
