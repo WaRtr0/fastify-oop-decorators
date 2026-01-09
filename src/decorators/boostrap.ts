@@ -52,37 +52,40 @@ function processModule(module: Type): { providers: Type[]; controllers: Type[]; 
     return { providers: allProviders, controllers: allControllers, gateways: allGateways };
 }
 
+// Optimisation V4: Boucle For + Array pré-alloué
 function buildArgFactory(params: ParamDefinition[]): (req: FastifyRequest, res: FastifyReply) => any[] {
     const sorted = params.sort((a, b) => a.index - b.index);
+    const len = sorted.length;
 
-    const getters = sorted.map(param => {
+    if (len === 0) {
+        const empty: any[] = [];
+        return () => empty;
+    }
+
+    const getters = new Array<(req: FastifyRequest, res: FastifyReply) => any>(len);
+
+    for (let i = 0; i < len; i++) {
+        const param = sorted[i];
         switch (param.type) {
-            case ParamType.REQ: return (req: FastifyRequest) => req;
-            case ParamType.RES: return (_: any, res: FastifyReply) => res;
-            case ParamType.BODY: return (req: FastifyRequest) => req.body;
-            case ParamType.QUERY:
-                return param.key
-                    ? (req: FastifyRequest) => (req.query as any)[param.key!] 
-                    : (req: FastifyRequest) => req.query;
-            case ParamType.PARAM:
-                return param.key
-                    ? (req: FastifyRequest) => (req.params as any)[param.key!] 
-                    : (req: FastifyRequest) => req.params;
-            case ParamType.HEADERS:
-                return param.key
-                    ? (req: FastifyRequest) => req.headers[param.key!]
-                    : (req: FastifyRequest) => req.headers;
-            case ParamType.PLUGIN:
-                 return param.key
-                    ? (req: FastifyRequest) => (req.server as any)[param.key!]
-                    : (req: FastifyRequest) => req.server;
-            case ParamType.JWT_BODY:
-                return (req: FastifyRequest) => (req as any).user || parseJWT(req.headers['authorization']);
-            default: return () => undefined;
+            case ParamType.REQ: getters[i] = (req) => req; break;
+            case ParamType.RES: getters[i] = (_, res) => res; break;
+            case ParamType.BODY: getters[i] = (req) => req.body; break;
+            case ParamType.QUERY: getters[i] = param.key ? (req) => (req.query as any)[param.key!] : (req) => req.query; break;
+            case ParamType.PARAM: getters[i] = param.key ? (req) => (req.params as any)[param.key!] : (req) => req.params; break;
+            case ParamType.HEADERS: getters[i] = param.key ? (req) => req.headers[param.key!] : (req) => req.headers; break;
+            case ParamType.PLUGIN: getters[i] = param.key ? (req) => (req.server as any)[param.key!] : (req) => req.server; break;
+            case ParamType.JWT_BODY: getters[i] = (req) => (req as any).user || parseJWT(req.headers['authorization']); break;
+            default: getters[i] = () => undefined;
         }
-    });
+    }
 
-    return (req, res) => getters.map(getter => getter(req, res));
+    return (req, res) => {
+        const args = new Array(len);
+        for (let i = 0; i < len; i++) {
+            args[i] = getters[i](req, res);
+        }
+        return args;
+    };
 }
 
 async function runGuards(
