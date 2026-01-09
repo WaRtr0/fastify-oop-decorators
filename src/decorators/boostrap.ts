@@ -52,6 +52,39 @@ function processModule(module: Type): { providers: Type[]; controllers: Type[]; 
     return { providers: allProviders, controllers: allControllers, gateways: allGateways };
 }
 
+function buildArgFactory(params: ParamDefinition[]): (req: FastifyRequest, res: FastifyReply) => any[] {
+    const sorted = params.sort((a, b) => a.index - b.index);
+
+    const getters = sorted.map(param => {
+        switch (param.type) {
+            case ParamType.REQ: return (req: FastifyRequest) => req;
+            case ParamType.RES: return (_: any, res: FastifyReply) => res;
+            case ParamType.BODY: return (req: FastifyRequest) => req.body;
+            case ParamType.QUERY:
+                return param.key
+                    ? (req: FastifyRequest) => (req.query as any)[param.key!] 
+                    : (req: FastifyRequest) => req.query;
+            case ParamType.PARAM:
+                return param.key
+                    ? (req: FastifyRequest) => (req.params as any)[param.key!] 
+                    : (req: FastifyRequest) => req.params;
+            case ParamType.HEADERS:
+                return param.key
+                    ? (req: FastifyRequest) => req.headers[param.key!]
+                    : (req: FastifyRequest) => req.headers;
+            case ParamType.PLUGIN:
+                 return param.key
+                    ? (req: FastifyRequest) => (req.server as any)[param.key!]
+                    : (req: FastifyRequest) => req.server;
+            case ParamType.JWT_BODY:
+                return (req: FastifyRequest) => (req as any).user || parseJWT(req.headers['authorization']);
+            default: return () => undefined;
+        }
+    });
+
+    return (req, res) => getters.map(getter => getter(req, res));
+}
+
 async function runGuards(
     guards: GuardClass[],
     req: FastifyRequest,
@@ -167,7 +200,8 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
             const methodGuards = Reflect.getOwnMetadata(METADATA_KEYS.guards, controller.prototype, route.methodName) || [];
             const methodMiddlewares = Reflect.getOwnMetadata(METADATA_KEYS.middlewares, controller.prototype, route.methodName) || [];
             const methodHeaders = Reflect.getOwnMetadata(METADATA_KEYS.headers, controller.prototype, route.methodName) || {};
-
+            
+            const argFactory = buildArgFactory(methodParams);
             // Fusion des tableaux
             const allGuards = [...classGuards, ...methodGuards];
             const allMiddlewares = [...classMiddlewares, ...methodMiddlewares];
@@ -208,22 +242,26 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
                         }
 
                         // 3. Construction des arguments (Optimisé)
-                        const args = [];
-                        if (sortedParams.length > 0) {
-                            for (const param of sortedParams) {
-                                switch (param.type) {
-                                    case ParamType.REQ: args.push(req); break;
-                                    case ParamType.RES: args.push(res); break;
-                                    case ParamType.BODY: args.push(req.body); break;
-                                    case ParamType.QUERY: args.push(param.key ? (req.query as any)[param.key] : req.query); break;
-                                    case ParamType.PARAM: args.push(param.key ? (req.params as any)[param.key] : req.params); break;
-                                    case ParamType.HEADERS: args.push(param.key ? req.headers[param.key] : req.headers); break;
-                                    case ParamType.PLUGIN: args.push(param.key ? (req.server as any)[param.key] : req.server); break;
-                                    case ParamType.JWT_BODY: args.push(parseJWT(req.headers['authorization'])); break;
-                                    default: args.push(undefined);
-                                }
-                            }
-                        }
+                        // const args = [];
+                        // if (sortedParams.length > 0) {
+                        //     for (const param of sortedParams) {
+                        //         switch (param.type) {
+                        //             case ParamType.REQ: args.push(req); break;
+                        //             case ParamType.RES: args.push(res); break;
+                        //             case ParamType.BODY: args.push(req.body); break;
+                        //             case ParamType.QUERY: args.push(param.key ? (req.query as any)[param.key] : req.query); break;
+                        //             case ParamType.PARAM: args.push(param.key ? (req.params as any)[param.key] : req.params); break;
+                        //             case ParamType.HEADERS: args.push(param.key ? req.headers[param.key] : req.headers); break;
+                        //             case ParamType.PLUGIN: args.push(param.key ? (req.server as any)[param.key] : req.server); break;
+                        //             case ParamType.JWT_BODY: args.push(parseJWT(req.headers['authorization'])); break;
+                        //             default: args.push(undefined);
+                        //         }
+                        //     }
+                        // }
+
+                        // Construction des arguments Optimisé V3 !
+
+                        const args = argFactory(req, res);
 
                         // 4. Headers
                         if (allHeadersEntries.length > 0) {
