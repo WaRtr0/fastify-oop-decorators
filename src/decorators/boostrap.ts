@@ -52,6 +52,9 @@ function processModule(module: Type): { providers: Type[]; controllers: Type[]; 
     return { providers: allProviders, controllers: allControllers, gateways: allGateways };
 }
 
+type ResolvedGuard = Guard;
+type ResolvedMiddleware = MiddlewareClass | MiddlewareHandler | { use: MiddlewareHandler };
+
 // Optimisation V4: Boucle For + Array pré-alloué
 function buildArgFactory(params: ParamDefinition[]): (req: FastifyRequest, res: FastifyReply) => any[] {
     const sorted = params.sort((a, b) => a.index - b.index);
@@ -88,36 +91,57 @@ function buildArgFactory(params: ParamDefinition[]): (req: FastifyRequest, res: 
     };
 }
 
-async function runGuards(
-    guards: GuardClass[],
-    req: FastifyRequest,
-    res: FastifyReply,
-): Promise<boolean> {
-    for (const GuardCtor of guards) {
-        const guardInstance: Guard = container.resolve(GuardCtor);
-        const can = await Promise.resolve(guardInstance.canActivate({ req, res }));
-        if (!can) {
-            return false;
-        }
+// async function runGuards(
+//     guards: GuardClass[],
+//     req: FastifyRequest,
+//     res: FastifyReply,
+// ): Promise<boolean> {
+//     for (const GuardCtor of guards) {
+//         const guardInstance: Guard = container.resolve(GuardCtor);
+//         const can = await Promise.resolve(guardInstance.canActivate({ req, res }));
+//         if (!can) {
+//             return false;
+//         }
+//     }
+//     return true;
+// }
+
+// async function runMiddlewares(
+//     handlers: (MiddlewareClass | MiddlewareHandler)[],
+//     req: FastifyRequest,
+//     res: FastifyReply,
+// ): Promise<void> {
+//     for (const h of handlers) {
+//         if (
+//             typeof h === 'function' &&
+//             'prototype' in h &&
+//             typeof (h as any).prototype?.use === 'function'
+//         ) {
+//             const instance = container.resolve(h as MiddlewareClass);
+//             await Promise.resolve(instance.use(req, res));
+//         } else {
+//             await Promise.resolve((h as MiddlewareHandler)(req, res));
+//         }
+//         if (res.sent) return;
+//     }
+// }
+
+
+// opti : on resolve plus chaque runtime, on creer des instances et deja resolve
+async function runGuards(guards: ResolvedGuard[], req: FastifyRequest, res: FastifyReply): Promise<boolean> {
+    for (const guard of guards) {
+        const can = await guard.canActivate({ req, res });
+        if (!can) return false;
     }
     return true;
 }
 
-async function runMiddlewares(
-    handlers: (MiddlewareClass | MiddlewareHandler)[],
-    req: FastifyRequest,
-    res: FastifyReply,
-): Promise<void> {
+async function runMiddlewares(handlers: ResolvedMiddleware[], req: FastifyRequest, res: FastifyReply): Promise<void> {
     for (const h of handlers) {
-        if (
-            typeof h === 'function' &&
-            'prototype' in h &&
-            typeof (h as any).prototype?.use === 'function'
-        ) {
-            const instance = container.resolve(h as MiddlewareClass);
-            await Promise.resolve(instance.use(req, res));
-        } else {
-            await Promise.resolve((h as MiddlewareHandler)(req, res));
+        if (typeof h === 'function') {
+            await (h as MiddlewareHandler)(req, res);
+        } else if ('use' in h && typeof h.use === 'function') {
+             await h.use(req, res);
         }
         if (res.sent) return;
     }
@@ -189,38 +213,45 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
         const routes: RouteDefinition[] = Reflect.getMetadata(METADATA_KEYS.routes, controller) || [];
 
         // Pré-calcul des métadonnées de classe (Fait 1 seule fois)
-        const classGuards = Reflect.getMetadata(METADATA_KEYS.guards, controller) || [];
-        const classMiddlewares = Reflect.getMetadata(METADATA_KEYS.middlewares, controller) || [];
+        const classGuardCtors: GuardClass[] = Reflect.getMetadata(METADATA_KEYS.guards, controller) || [];
+        const classGuardsInstances = classGuardCtors.map(G => container.resolve(G));
+
+        const classMiddlewareCtors = Reflect.getMetadata(METADATA_KEYS.middlewares, controller) || [];
+        const classMiddlewaresInstances = classMiddlewareCtors.map((M: any) => {
+            if (M.prototype && M.prototype.use) return container.resolve(M as MiddlewareClass);
+            return M;
+        });
+
         const classHeaders = Reflect.getMetadata(METADATA_KEYS.headers, controller) || {};
 
         routes.forEach((route) => {
             const routePath = (prefix + route.path).replace('//', '/');
-            
-            
-            // Récupération métadonnées méthode
-            const methodParams: ParamDefinition[] = Reflect.getOwnMetadata(METADATA_KEYS.param, controller.prototype, route.methodName) || [];
-            const methodSchema: RouteSchema = Reflect.getOwnMetadata(METADATA_KEYS.schema, controller.prototype, route.methodName) || {};
-            const methodGuards = Reflect.getOwnMetadata(METADATA_KEYS.guards, controller.prototype, route.methodName) || [];
-            const methodMiddlewares = Reflect.getOwnMetadata(METADATA_KEYS.middlewares, controller.prototype, route.methodName) || [];
-            const methodHeaders = Reflect.getOwnMetadata(METADATA_KEYS.headers, controller.prototype, route.methodName) || {};
-            
-            const argFactory = buildArgFactory(methodParams);
-            // Fusion des tableaux
-            const allGuards = [...classGuards, ...methodGuards];
-            const allMiddlewares = [...classMiddlewares, ...methodMiddlewares];
-            
-            // Préparation des Headers sous forme itérable pour éviter Object.entries() à chaque requête
-            const allHeadersObj = { ...classHeaders, ...methodHeaders };
-            const allHeadersEntries = Object.entries(allHeadersObj);
 
-			// grosse opti avant le sort ete dans le app[route.method](...)
-            // Tri des paramètres
-            const sortedParams = methodParams.sort((a, b) => a.index - b.index);
+            const methodParams: ParamDefinition[] = Reflect.getOwnMetadata(METADATA_KEYS.param, controller.prototype, route.methodName) || [];
+            const argFactory = buildArgFactory(methodParams);
+
+            const methodSchema: RouteSchema = Reflect.getOwnMetadata(METADATA_KEYS.schema, controller.prototype, route.methodName) || {};
+            // const methodGuards = Reflect.getOwnMetadata(METADATA_KEYS.guards, controller.prototype, route.methodName) || [];
+            // const methodMiddlewares = Reflect.getOwnMetadata(METADATA_KEYS.middlewares, controller.prototype, route.methodName) || [];
+
+            const methodHeaders = Reflect.getOwnMetadata(METADATA_KEYS.headers, controller.prototype, route.methodName) || {};
+            const allHeadersEntries = Object.entries({ ...classHeaders, ...methodHeaders });
+
+            const methodGuardCtors: GuardClass[] = Reflect.getOwnMetadata(METADATA_KEYS.guards, controller.prototype, route.methodName) || [];
+            const methodGuardsInstances = methodGuardCtors.map(G => container.resolve(G));
+
+            const methodMiddlewareCtors = Reflect.getOwnMetadata(METADATA_KEYS.middlewares, controller.prototype, route.methodName) || [];
+            const methodMiddlewaresInstances = methodMiddlewareCtors.map((M: any) => {
+                    if (M.prototype && M.prototype.use) return container.resolve(M as MiddlewareClass);
+                    return M;
+            });
+
+            const allGuards = [...classGuardsInstances, ...methodGuardsInstances];
+            const allMiddlewares = [...classMiddlewaresInstances, ...methodMiddlewaresInstances];
 
             const explicitHttpCode = Reflect.getOwnMetadata(METADATA_KEYS.httpCode, controller.prototype, route.methodName);
             const finalHttpCode = explicitHttpCode ?? DEFAULT_HTTP_CODES[route.method];
-            // const methodHttpCode = Reflect.getOwnMetadata(METADATA_KEYS.httpCode, controller.prototype, route.methodName);
-            // Binding du handler
+
             const handler = controllerInstance[route.methodName].bind(controllerInstance);
 
 
@@ -269,8 +300,7 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
                         // 4. Headers
                         if (allHeadersEntries.length > 0) {
                             for (const [name, value] of allHeadersEntries) {
-                                // @ts-ignore
-                                if (!res.getHeader(name)) res.header(name, value);
+                                res.header(name, value);
                             }
                         }
 
@@ -293,13 +323,9 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
                             });
                             return;
                         }
-                        if (error && typeof error.statusCode === 'number') {
-                            res
-                                .status(error.statusCode)
-                                .send({ statusCode: error.statusCode, message: error.message || 'Error' });
-                            return;
-                        }
-                        res.status(500).send({ statusCode: 500, message: 'Internal Server Error' });
+
+                        const status = error.statusCode || 500;
+                        res.status(status).send({ statusCode: status, message: error.message || 'Internal Server Error' });
                     }
                 },
             );
