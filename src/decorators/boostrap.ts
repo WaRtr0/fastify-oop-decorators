@@ -356,10 +356,10 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
             });
 
             app.io.of(namespace).on('connection', (socket: Socket) => {
-                const connectionParams: ParamDefinition[] = connectionHandlerMethod
-                    ? Reflect.getOwnMetadata(METADATA_KEYS.param, gateway.prototype, connectionHandlerMethod) || []
-                    : [];
-                const sortedConnectionParams = connectionParams.sort((a, b) => a.index - b.index);
+                // const connectionParams: ParamDefinition[] = connectionHandlerMethod
+                    // ? Reflect.getOwnMetadata(METADATA_KEYS.param, gateway.prototype, connectionHandlerMethod) || []
+                    // : [];
+                // const sortedConnectionParams = connectionParams.sort((a, b) => a.index - b.index);
 
                 // if (connectionHandlerMethod) {
                 //     if (sortedConnectionParams.length > 0) {
