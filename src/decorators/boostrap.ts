@@ -154,19 +154,31 @@ function parseJWT(token: string | undefined | null | string[]): any {
     if (Array.isArray(token)) token = token[0];
 
     try {
-        if (token.startsWith('Bearer ')) {
-            token = token.slice(7);
-        }
-        const parts = token.split('.');
-        if (parts.length >= 2) {
-            const payloadBase64 = parts[1];
-            const decoded = Buffer.from(payloadBase64, 'base64').toString('utf-8');
-            return JSON.parse(decoded);
-        }
+        let startIndex = 0;
+        if (token.startsWith('Bearer ')) startIndex = 7;
+        // add en minuscule on ne sait jamais...
+        else if (token.startsWith('bearer ')) startIndex = 7;
+
+        // const parts = token.split('.');
+        // if (parts.length >= 2) {
+        //     const payloadBase64 = parts[1];
+        //     const decoded = Buffer.from(payloadBase64, 'base64').toString('utf-8');
+        //     return JSON.parse(decoded);
+        // }
+
+        // opti au lieu d'utiliser split qui a allou un tableau de 3 string
+
+        const firstDot = token.indexOf('.', startIndex);
+        if (firstDot === -1) return undefined;
+
+        const secondDot = token.indexOf('.', firstDot + 1);
+        if (secondDot === -1) return undefined;
+
+        const payloadBase64 = token.substring(firstDot + 1, secondDot);
+        return JSON.parse(Buffer.from(payloadBase64, 'base64').toString('utf-8'));
     } catch (e) {
-        // ignore error
+        return undefined;
     }
-    return undefined;
 }
 
 function resolveWebSocketArgs(
@@ -479,41 +491,60 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
                 //     });
                 // });
 
-                preparedListeners.forEach(({ event, handler, validate, sortedParams }) => {
+                // preparedListeners.forEach(({ event, handler, validate, sortedParams }) => {
+                //     socket.on(event, async (payload: any) => {
+                //         try {
+
+                //             if (validate) {
+                //                 const isValid = validate(payload);
+                //                 if (!isValid) {
+                //                     socket.emit('error', {
+                //                         event,
+                //                         message: 'Validation failed',
+                //                         errors: (validate as any).errors,
+                //                     });
+                //                     return;
+                //                 }
+                //             }
+
+                //             let args: any[] = [socket, payload];
+                //             if (sortedParams.length > 0) {
+                //                 args = resolveWebSocketArgs(sortedParams, socket, payload);
+                //             }
+
+                //             const result = await Promise.resolve(handler(...args));
+
+                //             if (result !== undefined) {
+                //                 socket.emit(event, result);
+                //             }
+                //         } catch (error: any) {
+                //             socket.emit('error', {
+                //                 event,
+                //                 message: 'An error occurred on the server.',
+                //                 error: error.message,
+                //             });
+                //         }
+                //     });
+                // });
+
+                for (const listener of preparedListeners) {
+                    // opti accession 
+                    const { event, handler, validate, sortedParams } = listener;
                     socket.on(event, async (payload: any) => {
                         try {
-
-                            if (validate) {
-                                const isValid = validate(payload);
-                                if (!isValid) {
-                                    socket.emit('error', {
-                                        event,
-                                        message: 'Validation failed',
-                                        errors: (validate as any).errors,
-                                    });
-                                    return;
-                                }
+                            if (validate && !validate(payload)) {
+                                return socket.emit('error', { event, message: 'Validation failed', errors: (validate as any).errors });
                             }
+                            let args = [socket, payload];
+                            if (sortedParams.length > 0) args = resolveWebSocketArgs(sortedParams, socket, payload);
 
-                            let args: any[] = [socket, payload];
-                            if (sortedParams.length > 0) {
-                                args = resolveWebSocketArgs(sortedParams, socket, payload);
-                            }
-
-                            const result = await Promise.resolve(handler(...args));
-
-                            if (result !== undefined) {
-                                socket.emit(event, result);
-                            }
-                        } catch (error: any) {
-                            socket.emit('error', {
-                                event,
-                                message: 'An error occurred on the server.',
-                                error: error.message,
-                            });
+                            const result = await handler(...args);
+                            if (result !== undefined) socket.emit(event, result);
+                        } catch (e: any) {
+                            socket.emit('error', { event, message: 'Server error', error: e.message });
                         }
                     });
-                });
+                }
 
                 socket.on('disconnect', () => {
                     if (disconnectionHandlerMethod) {
