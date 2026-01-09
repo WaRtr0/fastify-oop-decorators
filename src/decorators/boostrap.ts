@@ -91,6 +91,38 @@ function buildArgFactory(params: ParamDefinition[]): (req: FastifyRequest, res: 
     };
 }
 
+function buildWsArgFactory(params: ParamDefinition[]): (socket: Socket, payload: any) => any[] {
+    const sorted = params.sort((a, b) => a.index - b.index);
+    const len = sorted.length;
+
+    if (len === 0) {
+        const empty: any[] = [];
+        return () => empty;
+    }
+
+    const getters = new Array<(socket: Socket, payload: any) => any>(len);
+
+    for (let i = 0; i < len; i++) {
+        const param = sorted[i];
+        switch (param.type) {
+            case ParamType.SOCKET: getters[i] = (socket) => socket; break;
+            case ParamType.MESSAGE_BODY: getters[i] = (_, payload) => payload; break;
+            case ParamType.JWT_BODY:
+                getters[i] = (socket) => parseJWT(socket.handshake.auth?.token || socket.handshake.query?.token || socket.handshake.headers['authorization']);
+                break;
+            default: getters[i] = () => undefined;
+        }
+    }
+
+    return (socket, payload) => {
+        const args = new Array(len);
+        for (let i = 0; i < len; i++) {
+            args[i] = getters[i](socket, payload);
+        }
+        return args;
+    };
+}
+
 // async function runGuards(
 //     guards: GuardClass[],
 //     req: FastifyRequest,
@@ -181,35 +213,35 @@ function parseJWT(token: string | undefined | null | string[]): any {
     }
 }
 
-function resolveWebSocketArgs(
-    params: ParamDefinition[],
-    socket: Socket,
-    payload?: any,
-): any[] {
-    const args: any[] = [];
-    for (const param of params) {
-        switch (param.type) {
-            case ParamType.SOCKET:
-                args.push(socket);
-                break;
-            case ParamType.MESSAGE_BODY:
-                args.push(payload);
-                break;
-            case ParamType.JWT_BODY:
-                args.push(
-                    parseJWT(
-                        socket.handshake.auth?.token ||
-                            socket.handshake.query?.token ||
-                            socket.handshake.headers['authorization'],
-                    ),
-                );
-                break;
-            default:
-                args.push(undefined);
-        }
-    }
-    return args;
-}
+// function resolveWebSocketArgs(
+//     params: ParamDefinition[],
+//     socket: Socket,
+//     payload?: any,
+// ): any[] {
+//     const args: any[] = [];
+//     for (const param of params) {
+//         switch (param.type) {
+//             case ParamType.SOCKET:
+//                 args.push(socket);
+//                 break;
+//             case ParamType.MESSAGE_BODY:
+//                 args.push(payload);
+//                 break;
+//             case ParamType.JWT_BODY:
+//                 args.push(
+//                     parseJWT(
+//                         socket.handshake.auth?.token ||
+//                             socket.handshake.query?.token ||
+//                             socket.handshake.headers['authorization'],
+//                     ),
+//                 );
+//                 break;
+//             default:
+//                 args.push(undefined);
+//         }
+//     }
+//     return args;
+// }
 
 export async function bootstrap(app: FastifyInstance, rootModule: Type) {
     container.setApp(app);
@@ -266,6 +298,8 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
 
             const handler = controllerInstance[route.methodName].bind(controllerInstance);
 
+            const allHeadersObj = { ...classHeaders, ...methodHeaders };
+            const hasHeaders = Object.keys(allHeadersObj).length > 0;
 
             app[route.method](
                 routePath,
@@ -310,11 +344,18 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
                         const args = argFactory(req, res);
 
                         // 4. Headers
-                        if (allHeadersEntries.length > 0) {
-                            for (const [name, value] of allHeadersEntries) {
-                                res.header(name, value);
-                            }
+                        // if (allHeadersEntries.length > 0) {
+                        //     for (const [name, value] of allHeadersEntries) {
+                        //         res.header(name, value);
+                        //     }
+                        // }
+
+                        // petit opti bye bye for
+                        if (hasHeaders) {
+                            res.headers(allHeadersObj);
                         }
+
+
 
                         if (finalHttpCode) {
                             res.status(finalHttpCode);
@@ -370,13 +411,17 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
             );
 
             // opti V3 la compilation de l'ajv ete toujours dans la runtime il ne fait pas dans chaque event mais fait toute meme a chaque connection de nouveau utilisateur... maintenant c en cache juste avant...
-            const connectionParams = connectionHandlerMethod 
-                ? (Reflect.getOwnMetadata(METADATA_KEYS.param, gateway.prototype, connectionHandlerMethod) || []).sort((a: any, b: any) => a.index - b.index) 
+            const connectionParams = connectionHandlerMethod
+                ? (Reflect.getOwnMetadata(METADATA_KEYS.param, gateway.prototype, connectionHandlerMethod) || []).sort((a: any, b: any) => a.index - b.index)
                 : [];
+
+            const connectionArgFactory = connectionHandlerMethod ? buildWsArgFactory(connectionParams) : null;
 
             const disconnectionParams = disconnectionHandlerMethod
                 ? (Reflect.getOwnMetadata(METADATA_KEYS.param, gateway.prototype, disconnectionHandlerMethod) || []).sort((a: any, b: any) => a.index - b.index)
                 : [];
+
+            const disconnectionArgFactory = disconnectionHandlerMethod ? buildWsArgFactory(disconnectionParams) : null;
 
             const preparedListeners = messages.map(({ event, methodName }) => {
                 const handler = gatewayInstance[methodName].bind(gatewayInstance);
@@ -390,10 +435,12 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
                     validate = (app.validatorCompiler as any)({ schema: bodySchema });
                 }
 
-                const methodParams = Reflect.getOwnMetadata(METADATA_KEYS.param, gateway.prototype, methodName) || [];
-                const sortedParams = methodParams.sort((a: any, b: any) => a.index - b.index);
 
-                return { event, handler, validate, sortedParams };
+
+                const methodParams = Reflect.getOwnMetadata(METADATA_KEYS.param, gateway.prototype, methodName) || [];
+                const argFactory = buildWsArgFactory(methodParams);
+
+                return { event, handler, validate, argFactory };
             });
 
             app.io.of(namespace).on('connection', (socket: Socket) => {
@@ -411,10 +458,8 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
                 //     }
                 // }
 
-                if (connectionHandlerMethod) {
-                    const args = connectionParams.length > 0
-                        ? resolveWebSocketArgs(connectionParams, socket)
-                        : [socket];
+                if (connectionHandlerMethod && connectionArgFactory) {
+                    const args = connectionArgFactory(socket, undefined);
                     gatewayInstance[connectionHandlerMethod](...args);
                 }
 
@@ -529,15 +574,13 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
 
                 for (const listener of preparedListeners) {
                     // opti accession 
-                    const { event, handler, validate, sortedParams } = listener;
+                    const { event, handler, validate, argFactory } = listener;
                     socket.on(event, async (payload: any) => {
                         try {
                             if (validate && !validate(payload)) {
                                 return socket.emit('error', { event, message: 'Validation failed', errors: (validate as any).errors });
                             }
-                            let args = [socket, payload];
-                            if (sortedParams.length > 0) args = resolveWebSocketArgs(sortedParams, socket, payload);
-
+                            const args = argFactory(socket, payload);
                             const result = await handler(...args);
                             if (result !== undefined) socket.emit(event, result);
                         } catch (e: any) {
@@ -547,10 +590,8 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
                 }
 
                 socket.on('disconnect', () => {
-                    if (disconnectionHandlerMethod) {
-                        const args = disconnectionParams.length > 0
-                            ? resolveWebSocketArgs(disconnectionParams, socket)
-                            : [socket];
+                    if (disconnectionHandlerMethod && disconnectionArgFactory) {
+                        const args = disconnectionArgFactory(socket, undefined);
                         gatewayInstance[disconnectionHandlerMethod](...args);
                     }
                 });
