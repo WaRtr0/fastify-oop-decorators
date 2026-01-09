@@ -12,6 +12,15 @@ import { container } from './services/container.js';
 import type { RouteSchema } from './validation/schema.decorator.js';
 import type { SubscribeMessageDefinition } from './websocket/subscribe-message.decorator.js';
 
+
+const DEFAULT_HTTP_CODES : Record<string, number> = {
+    // 'get': 200,
+    'post': 201,
+    // 'put': 204,
+    // 'patch': 204,
+    // 'delete': 204,
+};
+
 function processModule(module: Type): { providers: Type[]; controllers: Type[]; gateways: Type[] } {
     const allProviders: Type[] = [];
     const allControllers: Type[] = [];
@@ -151,6 +160,7 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
         routes.forEach((route) => {
             const routePath = (prefix + route.path).replace('//', '/');
             
+            
             // Récupération métadonnées méthode
             const methodParams: ParamDefinition[] = Reflect.getOwnMetadata(METADATA_KEYS.param, controller.prototype, route.methodName) || [];
             const methodSchema: RouteSchema = Reflect.getOwnMetadata(METADATA_KEYS.schema, controller.prototype, route.methodName) || {};
@@ -170,7 +180,9 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
             // Tri des paramètres
             const sortedParams = methodParams.sort((a, b) => a.index - b.index);
 
-            const methodHttpCode = Reflect.getOwnMetadata(METADATA_KEYS.httpCode, controller.prototype, route.methodName);
+            const explicitHttpCode = Reflect.getOwnMetadata(METADATA_KEYS.httpCode, controller.prototype, route.methodName);
+            const finalHttpCode = explicitHttpCode ?? DEFAULT_HTTP_CODES[route.method];
+            // const methodHttpCode = Reflect.getOwnMetadata(METADATA_KEYS.httpCode, controller.prototype, route.methodName);
             // Binding du handler
             const handler = controllerInstance[route.methodName].bind(controllerInstance);
 
@@ -221,8 +233,8 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
                             }
                         }
 
-                        if (methodHttpCode) {
-                            res.status(methodHttpCode);
+                        if (finalHttpCode) {
+                            res.status(finalHttpCode);
                         }
                         // 5. Exécution Handler
                         const result = await handler(...args);
