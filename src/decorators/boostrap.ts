@@ -12,6 +12,25 @@ import { container } from './services/container.js';
 import type { RouteSchema } from './validation/schema.decorator.js';
 import type { SubscribeMessageDefinition } from './websocket/subscribe-message.decorator.js';
 
+// Helper function to parse cookies from header string
+function parseCookies(cookieHeader: string | undefined): Record<string, string> {
+    if (!cookieHeader) return {};
+    return cookieHeader.split(';').reduce((cookies, cookie) => {
+        const [name, ...rest] = cookie.trim().split('=');
+        if (name) cookies[name] = rest.join('=');
+        return cookies;
+    }, {} as Record<string, string>);
+}
+
+function extractTokenFromSocket(socket: Socket): string | undefined {
+    if (socket.handshake.auth?.token) return socket.handshake.auth.token;
+    if (socket.handshake.query?.token) return socket.handshake.query.token as string;
+    if (socket.handshake.headers['authorization']) return socket.handshake.headers['authorization'];
+    const cookies = parseCookies(socket.handshake.headers.cookie);
+    if (cookies['access_token']) return `Bearer ${cookies['access_token']}`;
+    return undefined;
+}
+
 
 const DEFAULT_HTTP_CODES : Record<string, number> = {
     // 'get': 200,
@@ -108,7 +127,7 @@ function buildWsArgFactory(params: ParamDefinition[]): (socket: Socket, payload:
             case ParamType.SOCKET: getters[i] = (socket) => socket; break;
             case ParamType.MESSAGE_BODY: getters[i] = (_, payload) => payload; break;
             case ParamType.JWT_BODY:
-                getters[i] = (socket) => parseJWT(socket.handshake.auth?.token || socket.handshake.query?.token || socket.handshake.headers['authorization']);
+                getters[i] = (socket) => parseJWT(extractTokenFromSocket(socket));
                 break;
             default: getters[i] = () => undefined;
         }
