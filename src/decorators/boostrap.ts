@@ -31,6 +31,12 @@ function extractTokenFromSocket(socket: Socket): string | undefined {
     return undefined;
 }
 
+function extractTokenFromHttp(req: FastifyRequest): string | undefined {
+    if (req.headers['authorization']) return req.headers['authorization'];
+    const cookies = parseCookies(req.headers.cookie);
+    if (cookies['access_token']) return `Bearer ${cookies['access_token']}`;
+    return undefined;
+}
 
 const DEFAULT_HTTP_CODES : Record<string, number> = {
     // 'get': 200,
@@ -96,7 +102,7 @@ function buildArgFactory(params: ParamDefinition[]): (req: FastifyRequest, res: 
             case ParamType.PARAM: getters[i] = param.key ? (req) => (req.params as any)[param.key!] : (req) => req.params; break;
             case ParamType.HEADERS: getters[i] = param.key ? (req) => req.headers[param.key!] : (req) => req.headers; break;
             case ParamType.PLUGIN: getters[i] = param.key ? (req) => (req.server as any)[param.key!] : (req) => req.server; break;
-            case ParamType.JWT_BODY: getters[i] = (req) => (req as any).user || parseJWT(req.headers['authorization']); break;
+            case ParamType.JWT_BODY: getters[i] = (req) => (req as any).user || parseJWT(extractTokenFromHttp(req)); break;
             default: getters[i] = () => undefined;
         }
     }
