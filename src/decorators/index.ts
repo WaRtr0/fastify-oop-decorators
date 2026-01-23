@@ -22,3 +22,8 @@ export * from './websocket/subscribe-connection.decorator.js';
 export * from './websocket/subscribe-disconnection.decorator.js';
 export * from './websocket/subscribe-message.decorator.js';
 export * from './websocket/websocket.params.js';
+
+
+// Helpers exports
+export * from './helpers/metadata.keys.js';
+export * from './services/container.js';
