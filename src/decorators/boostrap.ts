@@ -304,7 +304,7 @@ export async function bootstrap(app: FastifyInstance, rootModule: Type) {
             // const methodMiddlewares = Reflect.getOwnMetadata(METADATA_KEYS.middlewares, controller.prototype, route.methodName) || [];
 
             const methodHeaders = Reflect.getOwnMetadata(METADATA_KEYS.headers, controller.prototype, route.methodName) || {};
-            const allHeadersEntries = Object.entries({ ...classHeaders, ...methodHeaders });
+            // const allHeadersEntries = Object.entries({ ...classHeaders, ...methodHeaders });
 
             const methodGuardCtors: GuardClass[] = Reflect.getOwnMetadata(METADATA_KEYS.guards, controller.prototype, route.methodName) || [];
             const methodGuardsInstances = methodGuardCtors.map(G => container.resolve(G));

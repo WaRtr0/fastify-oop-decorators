@@ -27,3 +27,7 @@ export * from './websocket/websocket.params.js';
 // Helpers exports
 export * from './helpers/metadata.keys.js';
 export * from './services/container.js';
+
+// Microservices exports
+
+export * from './standalone-bootstrap.js';
