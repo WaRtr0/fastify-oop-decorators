@@ -41,11 +41,17 @@ class DIContainer {
 
 		const newInstance = new token(...constructorArgs);
 
+		this.register(token, newInstance);
+
 		// Apply property injections
 		const injectPropsMap: Record<string | symbol, any> =
 			Reflect.getMetadata(METADATA_KEYS.injectProps, token) || {};
 		for (const [propKey, depToken] of Object.entries(injectPropsMap)) {
-			(newInstance as any)[propKey] = this.resolve(depToken);
+			let tokenToResolve = depToken;
+			if (typeof depToken === 'function' && !depToken.prototype) {
+				tokenToResolve = depToken();
+			}
+			(newInstance as any)[propKey] = this.resolve(tokenToResolve);
 		}
 
 		// Apply plugin injections
@@ -65,7 +71,6 @@ class DIContainer {
 			(newInstance as any)[propKey] = pluginValue;
 		}
 
-		this.register(token, newInstance);
 		return newInstance;
 	}
 
