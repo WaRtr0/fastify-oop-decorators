@@ -1,5 +1,5 @@
 {
-	"name": "my-fastify-decorators",
+	"name": "fastify-oop-decorators",
 	"version": "0.2.0",
 	"description": "Lightweight TypeScript decorators for Fastify v5",
 	"type": "module",
