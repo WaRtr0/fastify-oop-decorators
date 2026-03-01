@@ -11,22 +11,41 @@ Unlike other frameworks that use heavy adapters to support multiple HTTP servers
 ## Why use this library?
 
 * **Fastify Ecosystem First:** You are not locked into a massive, restrictive framework. This is just a Fastify plugin. You maintain full access to standard Fastify plugins (like `@fastify/cors`, `@fastify/jwt`, etc.) without jumping through hoops.
-* **Better Performance:** Because there is no multi-framework abstraction layer (like you would find with NestJS's FastifyAdapter), it runs exceptionally fast. Early benchmarks show a **~25% performance boost** on simple routes (without DTOs) and a **~20% boost** with validation, compared to traditional heavy frameworks. *(Detailed benchmarks coming soon).*
+* **Better Performance:** Because there is no multi-framework abstraction layer (like you would find with NestJS's FastifyAdapter), it runs exceptionally fast. Early benchmarks show a **~25% performance boost** on simple routes (without DTOs) and a **~20% boost** with validation, compared to traditional heavy frameworks. *(Detailed benchmarks coming soon)*.
 * **Lightning-Fast Validation:** Say goodbye to the heavy `class-validator`. We natively leverage Fastify's highly optimized JSON schemas (powered by AJV) to validate requests and responses at blazing speeds.
 
 ---
 
-## Complementary Library: AJV-Decorators
-
-To push optimization even further while maintaining an excellent Developer Experience (DX), I highly recommend using **[AJV-Decorators](https://github.com/WaRtr0/ajv-decorators)** alongside this library.
-
-It allows you to build your DTOs using classes and decorators (just like `class-validator`), but under the hood, it generates native JSON schemas for AJV. 
-
-**The result?** You get clean, OOP-style code without the performance penalty of `class-validator`, fully benefiting from AJV's speed—which is the fastest validator out there according to their [own benchmarks](https://ajv.js.org/guide/why-ajv.html#super-fast-secure).
-
----
-
 ## Installation
+
+You have two options to get started with `fastify-oop-decorators`: use our CLI tool to generate a boilerplate project (recommended), or install it manually into an existing project.
+
+### Option 1: Quick Start with the CLI (Recommended)
+
+The easiest way to get started is to use our official scaffolding CLI tool. Run the following command in your terminal:
+
+```bash
+npm create fastify-oop-decorators@latest my-awesome-api
+
+```
+
+The interactive prompt will guide you through setting up your project:
+
+* Choose your package manager (`npm`, `pnpm`, `yarn`, or `bun`).
+* Include `ajv-decorators` for class-based DTO validation.
+* Pick your preferred linter (ESLint, Biome, or none).
+
+Once the setup is complete, navigate into your new project and start the development server:
+
+```bash
+cd my-awesome-api
+npm run dev
+
+```
+
+### Option 2: Manual Installation
+
+If you prefer to add the library to an existing project, install the required dependencies:
 
 ```bash
 npm install fastify-oop-decorators reflect-metadata fastify
@@ -37,9 +56,11 @@ pnpm add fastify-oop-decorators reflect-metadata fastify
 
 *Note: Make sure to enable `experimentalDecorators` and `emitDecoratorMetadata` in your `tsconfig.json`.*
 
-## Quick Start
+---
 
-Here is how easy it is to get started:
+## Manual Usage (Quick Start)
+
+If you chose the manual installation, here is how easy it is to get started:
 
 ```typescript
 import Fastify from 'fastify';
@@ -74,6 +95,18 @@ start();
 
 ```
 
+---
+
+## Complementary Library: AJV-Decorators
+
+To push optimization even further while maintaining an excellent Developer Experience (DX), I highly recommend using **[AJV-Decorators](https://github.com/WaRtr0/ajv-decorators)** alongside this library.
+
+It allows you to build your DTOs using classes and decorators (just like `class-validator`), but under the hood, it generates native JSON schemas for AJV.
+
+**The result?** You get clean, OOP-style code without the performance penalty of `class-validator`, fully benefiting from AJV's speed—which is the fastest validator out there according to their [own benchmarks](https://ajv.js.org/guide/why-ajv.html#super-fast-secure). *(This option is offered natively if you use the CLI tool).*
+
+---
+
 ## API & Decorators (Inspired by NestJS)
 
 Honestly, if you are familiar with NestJS, you already know how to use most of this library. The core decorators (`@Module`, `@Controller`, `@Get`, `@Post`, `@Body`, `@UseGuards`, etc.) work exactly as you'd expect.
@@ -86,10 +119,14 @@ However, we added a few **Fastify-specific decorators** to help you get the most
 
 *(Full, detailed documentation is currently in the works).*
 
+---
+
 ## Roadmap
 
 The current main goal is a **modular refactor**.
 I plan to split this repository into smaller, dedicated packages (e.g., `@fastify-oop/core`, `@fastify-oop/websockets`) so you only have to install exactly what you need, keeping your final build as light as possible.
+
+---
 
 ## Contributing & Support
 
