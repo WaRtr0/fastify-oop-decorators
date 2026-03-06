@@ -1,7 +1,9 @@
 {
 	"name": "fastify-oop-decorators",
 	"version": "0.2.0",
-	"description": "Lightweight TypeScript decorators for Fastify v5",
+	"description": "Lightweight TypeScript decorators for Fastify",
+	"author": "Maxence Morot <contact@maxencem.dev> (https://github.com/WaRtr0)",
+	"license": "MIT",
 	"type": "module",
 	"exports": {
 		".": {
@@ -26,5 +28,25 @@
 		"socket.io": "^4.8.1",
 		"typescript": "^5.9.2"
 	},
-	"license": "MIT"
+	"keywords": [
+		"fastify",
+		"decorators",
+		"oop",
+		"controller",
+		"service",
+		"rest",
+		"api",
+		"web",
+		"typescript"
+	],
+	"engines": {
+		"node": ">=18.0.0"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/WaRtr0/fastify-oop-decorators.git"
+	},
+	"bugs": {
+		"url": "https://github.com/WaRtr0/fastify-oop-decorators/issues"
+	}
 }
