@@ -6,3 +6,5 @@ export function Service(): ClassDecorator {
 		Reflect.defineMetadata(METADATA_KEYS.service, true, target);
 	};
 }
+
+export const Injectable = Service;

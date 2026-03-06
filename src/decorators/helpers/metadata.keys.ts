@@ -4,7 +4,7 @@ export const METADATA_KEYS = {
 	routes: Symbol('routes'),
 	injectParams: Symbol('inject_params'),
 	injectProps: Symbol('inject_props'),
-	service: Symbol('service'),
+	service: Symbol('service'), // service (Spring boot friendly) || injectable (Angular / NestJS friendly)
 	module: Symbol('module'),
 	param: Symbol('param'),
 	schema: Symbol('schema'),
